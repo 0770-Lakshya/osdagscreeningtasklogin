@@ -9,9 +9,7 @@
  */
 
 (function () {
-  // grab the real browser fetch before mock-api.js patches it
-  var nativeFetch = window.__nativeFetch || window.fetch.bind(window);
-
+  var nativeFetch = window.__nativeFetch || window.fetch.bind(window); //it catches real browser fetch before mock-api.js catches it
   function json(status, body) {
     return new Response(JSON.stringify(body), {
       status: status,
@@ -36,10 +34,10 @@
 
   // session is stored in sessionStorage so it persists across page reloads
   // but clears when the browser tab is closed
-  var SESSION_KEY = "appwrite_session";
+  var SESSION_KEY="appwrite_session";
 
   function saveSession(data) {
-    sessionStorage.setItem(SESSION_KEY, JSON.stringify(data));
+    sessionStorage.setItem(SESSION_KEY,JSON.stringify(data));
   }
 
   function getSession() {
@@ -67,11 +65,11 @@
   // this uses nativeFetch directly (the real browser fetch) so it
   // doesn't get intercepted by our own fetch override below
   async function awRequest(method, path, body, sessionToken) {
-    var cfg = getConfig();
-    var fullUrl = cfg.endpoint + path;
+    var cfg=getConfig();
+    var fullUrl=cfg.endpoint + path;
 
-    var headers = {
-      "X-Appwrite-Project": cfg.projectId,
+    var headers={
+      "X-Appwrite-Project":cfg.projectId,
       "Content-Type": "application/json",
     };
 
@@ -79,11 +77,11 @@
       headers["X-Appwrite-Session"] = sessionToken;
     }
 
-    var opts = { method: method, headers: headers };
-    if (body) opts.body = JSON.stringify(body);
+    var opts={ method: method, headers: headers };
+    if (body) opts.body=JSON.stringify(body);
 
-    var res = await nativeFetch(fullUrl, opts);
-    var data = await res.json().catch(function () { return {}; });
+    var res=await nativeFetch(fullUrl, opts);
+    var data=await res.json().catch(function () { return {}; });
     return { status: res.status, data: data };
   }
 
@@ -97,7 +95,7 @@
     var checkPath = "/databases/" + cfg.databaseId + "/collections/" + cfg.collectionId + "/documents?queries[]=" + encodeURIComponent(queryObj);
     var checkRes = await awRequest("GET", checkPath, null, sessionToken);
     if (checkRes.status === 200 && checkRes.data.documents && checkRes.data.documents.length > 0) {
-      return; // already has files, skip
+      return; // already has files, just skip
     }
 
     console.log("[appwrite-adapter] seeding files for user:", userId);
@@ -194,8 +192,8 @@
     if (!email || !password) return json(400, { error: "email and password are required" });
 
     try {
-      // clear old session first — Appwrite has a limit on active sessions
-      var oldSession = getSession();
+      // clear old session first—Appwrite has limit on active sessions
+      var oldSession=getSession();
       if (oldSession && oldSession.sessionId) {
         try {
           await awRequest("DELETE", "/account/sessions/" + oldSession.sessionId, null, oldSession.sessionId);
@@ -215,8 +213,8 @@
       }
 
       // grab the user profile
-      var userRes = await awRequest("GET", "/account", null, sessionRes.data.$id);
-      var user = userRes.data;
+      var userRes=await awRequest("GET", "/account", null, sessionRes.data.$id);
+      var user=userRes.data;
 
       saveSession({ sessionId: sessionRes.data.$id, userId: user.$id });
 
@@ -234,7 +232,7 @@
   }
 
   async function handleLogout() {
-    var session = getSession();
+    var session=getSession();
     if (session) {
       try {
         await awRequest("DELETE", "/account/sessions/" + session.sessionId, null, session.sessionId);
@@ -245,13 +243,13 @@
   }
 
   async function handleMe() {
-    var session = getSession();
+    var session=getSession();
     if (!session) return json(401, { detail: "Not authenticated." });
 
     try {
-      var res = await awRequest("GET", "/account", null, session.sessionId);
-      if (res.status !== 200) {
-        clearSession(); // session expired probably
+      var res=await awRequest("GET", "/account", null, session.sessionId);
+      if (res.status!==200) {
+        clearSession(); // session expired may be
         return json(401, { detail: "Not authenticated." });
       }
 
@@ -267,23 +265,23 @@
   }
 
   async function handleFiles() {
-    var session = getSession();
+    var session=getSession();
     if (!session) return json(401, { detail: "Not authenticated." });
 
     try {
-      var cfg = getConfig();
+      var cfg=getConfig();
       // Appwrite queries use JSON format (not the old equal("attr","val") syntax)
-      var queryObj = JSON.stringify({ method: "equal", attribute: "ownerId", values: [session.userId] });
-      var docPath = "/databases/" + cfg.databaseId + "/collections/" + cfg.collectionId + "/documents?queries[]=" + encodeURIComponent(queryObj);
+      var queryObj=JSON.stringify({ method: "equal", attribute: "ownerId", values: [session.userId] });
+      var docPath="/databases/" + cfg.databaseId + "/collections/" + cfg.collectionId + "/documents?queries[]=" + encodeURIComponent(queryObj);
 
-      var res = await awRequest("GET", docPath, null, session.sessionId);
+      var res=await awRequest("GET", docPath, null, session.sessionId);
 
-      if (res.status !== 200) {
+      if (res.status!==200) {
         console.error("[appwrite-adapter] files failed:", res.status, res.data);
         return json(res.status, { error: res.data.message || "Failed to list files" });
       }
 
-      var files = (res.data.documents || []).map(function (doc) {
+      var files=(res.data.documents || []).map(function (doc) {
         return {
           id: doc.$id,
           ownerId: doc.ownerId,
@@ -302,12 +300,12 @@
   }
 
   async function handleFileById(fileId) {
-    var session = getSession();
+    var session=getSession();
     if (!session) return json(401, { detail: "Not authenticated." });
 
     try {
-      var cfg = getConfig();
-      var res = await awRequest(
+      var cfg=getConfig();
+      var res=await awRequest(
         "GET",
         "/databases/" + cfg.databaseId + "/collections/" + cfg.collectionId + "/documents/" + fileId,
         null,
@@ -343,40 +341,40 @@
   }
 
   async function handleFileDownload(fileId) {
-    var session = getSession();
+    var session=getSession();
     if (!session) return new Response("Not authenticated", { status: 401 });
 
     try {
-      var cfg = getConfig();
+      var cfg=getConfig();
 
-      var docRes = await awRequest(
+      var docRes=await awRequest(
         "GET",
         "/databases/" + cfg.databaseId + "/collections/" + cfg.collectionId + "/documents/" + fileId,
         null,
         session.sessionId
       );
 
-      if (docRes.status === 404) return new Response("File not found", { status: 404 });
-      if (docRes.status === 403) return new Response("Forbidden", { status: 403 });
+      if (docRes.status===404) return new Response("File not found", { status: 404 });
+      if (docRes.status===403) return new Response("Forbidden", { status: 403 });
 
-      var doc = docRes.data;
+      var doc=docRes.data;
 
-      if (doc.ownerId !== session.userId) {
+      if (doc.ownerId!==session.userId) {
         return new Response("Forbidden", { status: 403 });
       }
 
-      var storageFileId = doc.storageFileId;
+      var storageFileId=doc.storageFileId;
 
       if (!storageFileId) {
         // no actual file in storage, just return a placeholder
-        var placeholder = "File \"" + (doc.name || "unknown") + "\" — no file content uploaded to storage.";
+        var placeholder="File \"" + (doc.name || "unknown") + "\" — no file content uploaded to storage.";
         return new Response(placeholder, {
           status: 200,
-          headers: { "Content-Type": "text/plain", "Content-Disposition": 'attachment; filename="' + (doc.name || "file") + '"' },
+          headers:{ "Content-Type": "text/plain", "Content-Disposition": 'attachment; filename="' + (doc.name || "file") + '"' },
         });
       }
 
-      var fileRes = await nativeFetch(
+      var fileRes=await nativeFetch(
         cfg.endpoint + "/storage/buckets/" + cfg.bucketId + "/files/" + storageFileId + "/download",
         { headers: { "X-Appwrite-Project": cfg.projectId, "X-Appwrite-Session": session.sessionId } }
       );
@@ -399,35 +397,35 @@
   window.fetch = async function (input, init) {
     if (!isAppwriteMode()) return nativeFetch(input, init);
 
-    var url = typeof input === "string" ? input : input.url;
+    var url=typeof input==="string" ? input : input.url;
     var pathname;
     try {
-      pathname = new URL(url, window.location.href).pathname;
+      pathname=new URL(url, window.location.href).pathname;
     } catch (e) {
-      pathname = url;
+      pathname=url;
     }
 
-    var method = (init && init.method) || "GET";
+    var method=(init && init.method) || "GET";
 
-    // small delay to make it feel like a real network request
+    // small delay
     await new Promise(function (r) { setTimeout(r, 100); });
 
-    var postBody = null;
+    var postBody=null;
     if (init && init.body) {
-      try { postBody = JSON.parse(init.body); } catch (e) { postBody = {}; }
+      try { postBody=JSON.parse(init.body); } catch (e) { postBody = {}; }
     }
 
-    if (pathname === "/register" && method === "POST") return handleRegister(postBody);
-    if (pathname === "/login" && method === "POST") return handleLogin(postBody);
-    if (pathname === "/logout" && method === "POST") return handleLogout();
-    if (pathname === "/me" && method === "GET") return handleMe();
-    if (pathname === "/files" || pathname === "/files/") return handleFiles();
+    if (pathname==="/register" && method==="POST") return handleRegister(postBody);
+    if (pathname==="/login" && method==="POST") return handleLogin(postBody);
+    if (pathname==="/logout" && method==="POST") return handleLogout();
+    if (pathname==="/me" && method==="GET") return handleMe();
+    if (pathname==="/files" || pathname==="/files/") return handleFiles();
 
-    var m = pathname.match(/^\/files\/([^/]+)\/download$/);
-    if (m && method === "GET") return handleFileDownload(m[1]);
+    var m=pathname.match(/^\/files\/([^/]+)\/download$/);
+    if (m&& method==="GET") return handleFileDownload(m[1]);
 
-    m = pathname.match(/^\/files\/([^/]+)$/);
-    if (m && method === "GET") return handleFileById(m[1]);
+    m=pathname.match(/^\/files\/([^/]+)$/);
+    if (m && method==="GET") return handleFileById(m[1]);
 
     return json(404, { error: "No route for " + method + " " + pathname });
   };
