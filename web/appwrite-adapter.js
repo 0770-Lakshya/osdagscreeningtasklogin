@@ -9,10 +9,7 @@
  */
 
 (function () {
-  // save the current window.fetch (which might be mock-api.js's patched version)
-  // so we can pass through to it when not in Appwrite mode
-  var prevFetch = window.fetch.bind(window);
-  // also keep a reference to the original browser fetch for Appwrite API calls
+  // grab the real browser fetch before mock-api.js patches it
   var nativeFetch = window.__nativeFetch || window.fetch.bind(window);
 
   function json(status, body) {
@@ -82,7 +79,7 @@
       headers["X-Appwrite-Session"] = sessionToken;
     }
 
-    var opts = { method: method, headers: headers, credentials: "include" };
+    var opts = { method: method, headers: headers };
     if (body) opts.body = JSON.stringify(body);
 
     var res = await nativeFetch(fullUrl, opts);
@@ -93,10 +90,6 @@
   // ---- Seed files for a user after login ----
   // each user gets 2 sample files with simple numeric IDs (1, 2, 3, etc)
   async function seedFilesForUser(userId, sessionToken) {
-    if (!userId) {
-      console.warn("[appwrite-adapter] cannot seed files: userId is missing");
-      return;
-    }
     var cfg = getConfig();
 
     // check if user already has files (don't re-seed)
@@ -169,28 +162,25 @@
       var sessionRes = await awRequest("POST", "/account/sessions", {
         email: email,
         password: password,
+        provider: "email",
       });
 
       if (sessionRes.status !== 201) {
-        console.error("[appwrite-adapter] auto-login after register failed:", sessionRes.status, sessionRes.data);
         return json(201, {
           user: { id: createRes.data.$id, email: createRes.data.email },
           note: "Account created but auto-login failed. Please login manually.",
         });
       }
 
-      // Appwrite returns both $id (document ID) and secret (auth token)
-      // we need secret for the X-Appwrite-Session header
-      var token = sessionRes.data.secret || sessionRes.data.$id;
       clearSession();
-      saveSession({ sessionId: token, userId: createRes.data.$id });
+      saveSession({ sessionId: sessionRes.data.$id, userId: createRes.data.$id });
 
       // seed some files for the new user
-      await seedFilesForUser(createRes.data.$id, token);
+      await seedFilesForUser(createRes.data.$id, sessionRes.data.$id);
 
       return json(201, {
         user: { id: createRes.data.$id, email: createRes.data.email },
-        token: token,
+        token: sessionRes.data.$id,
       });
     } catch (e) {
       console.error("[appwrite-adapter] register error:", e);
@@ -204,17 +194,19 @@
     if (!email || !password) return json(400, { error: "email and password are required" });
 
     try {
-      // clear old session first — Appwrite blocks login if a session already exists.
-      // The real auth is the httpOnly cookie, so we DELETE without a header token
-      // and let credentials:'include' send the cookie automatically.
-      try {
-        await awRequest("DELETE", "/account/sessions/current");
-      } catch (e) { /* old session might not exist, that's fine */ }
+      // clear old session first — Appwrite has a limit on active sessions
+      var oldSession = getSession();
+      if (oldSession && oldSession.sessionId) {
+        try {
+          await awRequest("DELETE", "/account/sessions/" + oldSession.sessionId, null, oldSession.sessionId);
+        } catch (e) { /* whatever, it'll get cleaned up */ }
+      }
       clearSession();
 
       var sessionRes = await awRequest("POST", "/account/sessions", {
         email: email,
         password: password,
+        provider: "email",
       });
 
       if (sessionRes.status !== 201) {
@@ -222,38 +214,18 @@
         return json(401, { error: "Invalid email or password.", _debug: sessionRes.data });
       }
 
-      console.log("[appwrite-adapter] full session response:", JSON.stringify(sessionRes.data));
-      // Appwrite returns both $id (document ID) and secret (auth token)
-      // we need secret for the X-Appwrite-Session header
-      var token = sessionRes.data.secret || sessionRes.data.$id;
-      console.log("[appwrite-adapter] using token from:", sessionRes.data.secret ? "secret field" : "$id field (fallback)");
-      console.log("[appwrite-adapter] token preview:", token ? token.substring(0, 20) + "..." : "null");
-
       // grab the user profile
-      var userRes = await awRequest("GET", "/account", null, token);
-      console.log("[appwrite-adapter] GET /account response:", userRes.status, userRes.data);
-
-      if (userRes.status !== 200 || !userRes.data || !userRes.data.$id) {
-        console.error("[appwrite-adapter] could not fetch user profile, using session data");
-        var userId = userRes.data && userRes.data.$id ? userRes.data.$id : null;
-        saveSession({ sessionId: token, userId: userId });
-        return json(200, {
-          user: { id: userId, email: email },
-          token: token,
-        });
-      }
-
+      var userRes = await awRequest("GET", "/account", null, sessionRes.data.$id);
       var user = userRes.data;
-      saveSession({ sessionId: token, userId: user.$id });
 
-      // make sure they have some files (skip if userId is missing)
-      if (user.$id) {
-        await seedFilesForUser(user.$id, token);
-      }
+      saveSession({ sessionId: sessionRes.data.$id, userId: user.$id });
+
+      // make sure they have some files
+      await seedFilesForUser(user.$id, sessionRes.data.$id);
 
       return json(200, {
         user: { id: user.$id, email: user.email },
-        token: token,
+        token: sessionRes.data.$id,
       });
     } catch (e) {
       console.error("[appwrite-adapter] login error:", e);
@@ -262,10 +234,12 @@
   }
 
   async function handleLogout() {
-    try {
-      // DELETE without header — cookie does the auth
-      await awRequest("DELETE", "/account/sessions/current");
-    } catch (e) { /* ok */ }
+    var session = getSession();
+    if (session) {
+      try {
+        await awRequest("DELETE", "/account/sessions/" + session.sessionId, null, session.sessionId);
+      } catch (e) { /* ok */ }
+    }
     clearSession();
     return json(200, { detail: "Logged out." });
   }
@@ -275,8 +249,7 @@
     if (!session) return json(401, { detail: "Not authenticated." });
 
     try {
-      // Don't pass session.header — let the cookie handle auth via credentials:'include'
-      var res = await awRequest("GET", "/account");
+      var res = await awRequest("GET", "/account", null, session.sessionId);
       if (res.status !== 200) {
         clearSession(); // session expired probably
         return json(401, { detail: "Not authenticated." });
@@ -303,7 +276,7 @@
       var queryObj = JSON.stringify({ method: "equal", attribute: "ownerId", values: [session.userId] });
       var docPath = "/databases/" + cfg.databaseId + "/collections/" + cfg.collectionId + "/documents?queries[]=" + encodeURIComponent(queryObj);
 
-      var res = await awRequest("GET", docPath);
+      var res = await awRequest("GET", docPath, null, session.sessionId);
 
       if (res.status !== 200) {
         console.error("[appwrite-adapter] files failed:", res.status, res.data);
@@ -336,7 +309,9 @@
       var cfg = getConfig();
       var res = await awRequest(
         "GET",
-        "/databases/" + cfg.databaseId + "/collections/" + cfg.collectionId + "/documents/" + fileId
+        "/databases/" + cfg.databaseId + "/collections/" + cfg.collectionId + "/documents/" + fileId,
+        null,
+        session.sessionId
       );
 
       if (res.status === 404) return json(404, { error: "File not found" });
@@ -376,7 +351,9 @@
 
       var docRes = await awRequest(
         "GET",
-        "/databases/" + cfg.databaseId + "/collections/" + cfg.collectionId + "/documents/" + fileId
+        "/databases/" + cfg.databaseId + "/collections/" + cfg.collectionId + "/documents/" + fileId,
+        null,
+        session.sessionId
       );
 
       if (docRes.status === 404) return new Response("File not found", { status: 404 });
@@ -401,7 +378,7 @@
 
       var fileRes = await nativeFetch(
         cfg.endpoint + "/storage/buckets/" + cfg.bucketId + "/files/" + storageFileId + "/download",
-        { headers: { "X-Appwrite-Project": cfg.projectId }, credentials: "include" }
+        { headers: { "X-Appwrite-Project": cfg.projectId, "X-Appwrite-Session": session.sessionId } }
       );
 
       if (!fileRes.ok) return new Response("File not found", { status: 404 });
@@ -420,7 +397,7 @@
 
   // ---- hook into window.fetch ----
   window.fetch = async function (input, init) {
-    if (!isAppwriteMode()) return prevFetch(input, init);
+    if (!isAppwriteMode()) return nativeFetch(input, init);
 
     var url = typeof input === "string" ? input : input.url;
     var pathname;

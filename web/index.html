@@ -39,7 +39,7 @@
 
 <fieldset>
   <legend>Custom backend settings (only used in "Custom REST backend" mode)</legend>
-  <label>Base URL <input id="baseUrl" value="http://localhost:3000" size="30"></label>
+  <label>Base URL <input id="baseUrl" value="http://localhost:8001" size="30"></label>
   <label><input type="checkbox" id="useCookies"> Backend uses cookie sessions (send credentials)</label>
 </fieldset>
 
@@ -68,14 +68,14 @@
 <fieldset>
   <legend>Register</legend>
   <label>Email <input id="regEmail" value="alice@example.com"></label>
-  <label>Password <input id="regPassword" type="text" value="Password123!"></label>
+  <label>Password <input id="regPassword" type="password" value="Password123!"></label>
   <button onclick="doRegister()">Register</button>
 </fieldset>
 
 <fieldset>
   <legend>Login</legend>
   <label>Email <input id="loginEmail" value="alice@example.com"></label>
-  <label>Password <input id="loginPassword" type="text" value="Password123!"></label>
+  <label>Password <input id="loginPassword" type="password" value="Password123!"></label>
   <div class="btn-row">
     <button onclick="doLogin()">Login</button>
     <button onclick="doLogout()">Logout</button>
@@ -103,7 +103,7 @@
 <script>window.__nativeFetch = window.fetch.bind(window);</script>
 <script src="mock-api.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/appwrite@17.0.0"></script>
-<script src="appwrite-adapter.js"></script>
+<script src="../appwrite-backend/appwrite-adapter.js"></script>
 <script>
 function base() { return document.getElementById('baseUrl').value.replace(/\/$/, ''); }
 function useCookies() { return document.getElementById('useCookies').checked; }

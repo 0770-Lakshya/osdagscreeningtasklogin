@@ -1,33 +1,40 @@
 # Secure Login System
 
-This is my submission for the OSDAG IIT Bombay task.
+This is my submission for the FOSSEE Osdag Autumn Semester Internship 2026 — the **Login System with User Details & File Access** screening task.
 
-- **Custom backend**: Django + DRF + JWT (SQLite for now, can swap to Postgres)
+I built the same login system twice:
+- **Custom backend**: Django 6.1 + DRF + JWT (SQLite for dev, can switch to PostgreSQL)
 - **Appwrite backend**: Appwrite Cloud, with a JS adapter in the browser
+
+Both share the same frontend (`web/index.html`).
 
 ---
 
 ## Project structure
 
 ```
-├── custom-backend/               # Django backend 1
+├── custom-backend/               # Django backend
 │   ├── manage.py
 │   ├── requirements.txt
 │   ├── .env.example
-│   ├── config/                   # settings, urls, wsgi
-│   ├── users/                    # register, login, logout, me
+│   ├── config/                   # settings, urls, wsgi, asgi
+│   ├── users/                    # register, login, logout, refresh, me
+│   │   ├── tests.py              # 12 auth tests
 │   │   └── management/commands/seed_demo.py
 │   └── files/                    # file list, detail, download
+│       └── tests.py              # 16 data isolation tests
 │
-├── appwrite-backend/             # Appwrite backend 2
-│   └── appwrite-adapter.js       # the adapter that talks to Appwrite REST API
+├── appwrite-backend/             # Appwrite backend
+│   └── appwrite-adapter.js       # adapter that talks to Appwrite REST API
 │
-├── web/                          
-│   ├── index.html                
+├── web/                          # Shared test client
+│   ├── index.html                # the required GUI (Mock / Custom / Appwrite modes)
 │   ├── mock-api.js               # in-browser mock for quick demo
 │   ├── seed-data.json            # mock seed data
-│   
+│   └── README.md                 # how to run the web client
+│
 ├── README.md
+└── report.md
 ```
 
 ---
@@ -39,7 +46,7 @@ cd custom-backend
 python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env             # optional, sqlite works fine without it
+cp .env.example .env             # optional, SQLite works fine without it
 python manage.py migrate
 python manage.py seed_demo       # makes 3 users + files
 python manage.py runserver 8001
@@ -86,6 +93,17 @@ Each user gets 2 files. File IDs are simple numbers (1, 2, 3...):
 
 ---
 
+## Running tests
+
+```bash
+cd custom-backend
+python manage.py test
+```
+
+28 tests total. They check things like: each user only sees their own files, accessing someone else's file gives 403 not 404, wrong password and wrong email both give the same error so you can't guess which emails exist, and the account locks out after 5 bad attempts.
+
+---
+
 ## API endpoints
 
 Both backends expose these routes:
@@ -97,51 +115,49 @@ Both backends expose these routes:
 | POST | `/refresh` | no | get new token pair |
 | GET | `/me` | yes | current user profile |
 | GET | `/files` | yes | list user's files |
-| GET | `/files/:id` | yes | get single file (403 if not his/her) |
+| GET | `/files/:id` | yes | get single file (403 if not yours) |
 | GET | `/files/:id/download` | yes | download file |
 
 ---
 
 ## Why I made these choices
-### JWT vs sessions
-I went with JWT for Django because it's stateless — the server doesn't need to hit the database on every request to verify who you are. That said, I do store refresh tokens server-side (hashed with SHA-256) so they can be revoked when you log out. Best of both worlds, I guess.
 
-Appwrite handles sessions on its own, so the adapter just passes the session secret around.
+### JWT vs sessions
+
+I went with JWT for Django because the server doesn't need to hit the database on every request to check who you are. But I do store refresh tokens server-side (hashed with SHA-256) so they can be revoked when you log out. Kind of a best-of-both-worlds thing.
+
+Appwrite handles sessions on its own. The adapter just relies on httpOnly cookies — when you login, Appwrite sets a cookie, and the browser sends it automatically with every request via `credentials: "include"`.
 
 ### How logout works
-When you logout from Django, the server does two things:
-1. Deletes the refresh token row from the database
-2. Adds the access token's `jti` (unique ID inside the JWT) to a blacklist table
 
-So even if someone still has a valid-looking access token, it gets rejected because of the blacklist check. The token "looks" valid but the server knows it's been logged out.
+For Django, when you logout the server does two things: deletes the refresh token from the database, and blacklists the access token's `jti`. So even if someone has a valid-looking token, it gets rejected after logout.
 
-For Appwrite it's simpler — `account.deleteSession("current")` and Appwrite takes care of it.
+For Appwrite, the adapter sends `DELETE /v1/account/sessions/current` and Appwrite destroys the session on their end.
 
 ### Data isolation (the main security thing)
-This is what the task cares about most, so as i was.
 
 **Django:**
-- `get_queryset()` filters by `owner=request.user` — you literally can't list someone else's files
-- `get_object()` checks the owner and returns 403 (not 404) if it's someone else's file — this distinction matters for the task
-- All protected routes have `IsAuthenticated`
+- `get_queryset()` filters by `owner=request.user` — you can't list someone else's files
+- `get_object()` checks ownership and returns 403 (not 404) if it's someone else's file
+- All protected routes require `IsAuthenticated`
 
 **Appwrite:**
-- The adapter queries docs where `ownerId` matches the logged-in user
+- The adapter queries documents where `ownerId` matches the logged-in user
 - Also double-checks ownership when fetching a single file
 
 ### What Appwrite does vs what I did
 
-Appwrite handles the hard stuff automatically: password hashing (argon2), session management, rate limiting, CORS. I didn't have to write any of that.
+Appwrite handles password hashing, session management, rate limiting, and CORS automatically. I didn't have to write any of that.
 
-What I configured: the collection schema, permissions, the ownerId index, and the adapter that translates our API routes into Appwrite REST calls. The adapter also does its own ownership check as an extra safety net.
+What I did: set up the collection schema, permissions, the ownerId index, and wrote the adapter that translates our API routes into Appwrite REST calls. The adapter also does its own ownership check as extra protection.
 
-### What I'd improve
+### What I'd improve with more time
 
-- Actual file upload/download through Appwrite Storage (right now it's metadata only)
-- E2E tests for the data isolation stuff
-- Docker Compose so you can start everything with one command and i can also  add redis for caching and faster reloding.
+- Actual file upload/download through Appwrite Storage (right now it's just metadata)
+- Docker Compose so you can start everything with one command
 - HTTPS in production
-- Maybe IP-based rate limiting on Django too (right now it only locks out after 5 failed logins)
+- IP-based rate limiting on Django (right now it only locks out after 5 failed logins)
+- A refresh token button in the test client
 
 ---
 
