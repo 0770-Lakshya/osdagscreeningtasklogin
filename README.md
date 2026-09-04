@@ -184,8 +184,8 @@ Open `http://localhost:8080/web/index.html` and use the radio buttons to switch 
 > `[appwrite-adapter] ready — endpoint: ...` in the console. If that line is missing,
 > the adapter did not load and Appwrite mode will not work.
 >
-> **If port 8080 is already in use** the server fails to bind and an older server keeps
+<!-- > **If port 8080 is already in use** the server fails to bind and an older server keeps
 > answering. Run it in the foreground so you see the error. To clear the port on Windows:
 > ```powershell
 > Get-NetTCPConnection -LocalPort 8080 -State Listen | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
-> ```
+> ``` -->
