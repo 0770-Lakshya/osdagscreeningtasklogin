@@ -167,8 +167,25 @@ What I did: set up the collection schema, permissions, the ownerId index, and wr
 # terminal 1 — Django backend
 cd custom-backend && python manage.py runserver 8001
 
-# terminal 2 — web client
-cd web && python -m http.server 8080
+# terminal 2 — web client (run from the PROJECT ROOT, not from web/)
+python -m http.server 8080
 ```
 
-Open `http://localhost:8080/index.html` and use the radio buttons to switch between Mock / Custom / Appwrite modes.
+Open `http://localhost:8080/web/index.html` and use the radio buttons to switch between Mock / Custom / Appwrite modes.
+
+> **Serve from the project root, not from inside `web/`.** `index.html` loads the
+> Appwrite adapter with `<script src="../appwrite-backend/appwrite-adapter.js">`, and
+> Python's `http.server` will not serve anything above its own root directory. Running
+> it inside `web/` makes that script 404 **silently** — the page still loads, but with
+> the adapter missing every request falls through to the Custom backend, so Appwrite
+> mode quietly talks to Django instead.
+>
+> **Check it loaded:** open DevTools and look for
+> `[appwrite-adapter] ready — endpoint: ...` in the console. If that line is missing,
+> the adapter did not load and Appwrite mode will not work.
+>
+> **If port 8080 is already in use** the server fails to bind and an older server keeps
+> answering. Run it in the foreground so you see the error. To clear the port on Windows:
+> ```powershell
+> Get-NetTCPConnection -LocalPort 8080 -State Listen | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
+> ```

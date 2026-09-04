@@ -12,12 +12,22 @@ The Appwrite adapter (`appwrite-adapter.js`) lives in `../appwrite-backend/` and
 
 ## How to run
 
-1. Start a web server in this folder:
+1. Start a web server **from the project root** — the folder above this one, not this folder:
    ```bash
+   cd ..                      # repo root, which contains both web/ and appwrite-backend/
    python -m http.server 8080
    ```
 
-2. Open `http://localhost:8080/index.html`
+   This matters. `index.html` loads the Appwrite adapter with
+   `<script src="../appwrite-backend/appwrite-adapter.js">`, and Python's `http.server`
+   refuses to serve anything above its root. Serving from inside `web/` makes that
+   script 404 silently: the page still loads, but without the adapter every request
+   falls through to the Custom backend, so Appwrite mode quietly talks to Django.
+
+2. Open `http://localhost:8080/web/index.html`
+
+   Check DevTools for `[appwrite-adapter] ready — endpoint: ...`. If that line is
+   missing, the adapter did not load and Appwrite mode will not work.
 
 3. Pick your backend mode:
    - **Mock** — works right away, no backend needed
