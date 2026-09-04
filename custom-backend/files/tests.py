@@ -244,3 +244,17 @@ class FileUploadTest(TestCase):
         res = self.auth_client.get("/files/1")
         self.assertEqual(res.status_code, status.HTTP_200_OK)
         self.assertEqual(res.data["owner_email"], "uploader@test.com")
+
+    def test_uploaded_file_can_be_downloaded(self):
+        """Upload through the API, then download it — the bytes must survive."""
+        res=create_file(self.auth_client, "roundtrip.txt", b"hello world")
+        dl=self.auth_client.get(f"/files/{res.data['id']}/download")
+        self.assertEqual(dl.status_code, status.HTTP_200_OK)
+        self.assertEqual(b"".join(dl.streaming_content), b"hello world")
+
+    def test_upload_without_file_returns_400(self):
+        """A file upload with no file should be rejected, not stored empty."""
+        res=self.auth_client.post(
+            "/files", {"name": "x.txt", "des": "no file attached"}, format="multipart"
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)

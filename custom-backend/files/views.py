@@ -1,6 +1,6 @@
 from django.http import FileResponse
 from rest_framework import generics
-from rest_framework.exceptions import NotFound, PermissionDenied
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 
@@ -19,9 +19,12 @@ class FileListCreateView(generics.ListCreateAPIView):
 
     def perform_create(self, serializer):
         uploaded = self.request.FILES.get("file")
+        if not uploaded:
+            raise ValidationError({"file": "A file is required."}) # content is actually persists the bytes; without it the rowis created with an empty FileField and the download 500s later
         serializer.save(
             owner=self.request.user,
-            size=uploaded.size if uploaded else 0,
+            content=uploaded,
+            size=uploaded.size,
         )
 
 
@@ -51,6 +54,9 @@ class FileDownloadView(APIView):
             raise NotFound("File not found.")
         if file_obj.owner_id != request.user.id:
             raise PermissionDenied("You do not have access to this file.")
+        # rows created before the upload fix have no bytes on disk
+        if not file_obj.content:
+            raise NotFound("File content is not available.")
         return FileResponse(
             file_obj.content.open("rb"),
             as_attachment=True,
